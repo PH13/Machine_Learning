@@ -1,0 +1,137 @@
+---
+title: "Prediction Assignment"
+author: "Peter Hagen"
+date: "June 10, 2016"
+output: html_document
+---
+###Assignment
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+####Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+###Setting up Environment
+```{r}
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+
+
+
+training <- read.csv("~/Desktop/Machine_Learning/pml-training.csv", na.strings = c("", "NA", "NULL"))
+testing <- read.csv("~/Desktop/Machine_Learning/pml-testing.csv", na.strings = c("", "NA", "NULL"))
+
+
+```
+
+###Cleaning Data
+I set classe to factors, remove the columns with any NAs and the first 8 columns which are not useful.
+```{r}
+training$classe <- as.factor(training$classe)  
+
+training <- training[ , colSums(is.na(training)) == 0]
+testing <- testing[ , colSums(is.na(testing)) == 0]
+
+train.trim <- training[, -(1:8)]
+
+
+```
+
+##Cross Validation
+A cross validation dataset is made by partitioning the cleaned training set. This will be used for cross validation when building the models and testing them before applying them to the final test set.
+```{r}
+
+set.seed(123321)
+inTrain = createDataPartition(train.trim$classe, p = 0.60, list=FALSE)
+train = train.trim[inTrain,]
+train.test = train.trim[-inTrain,]
+
+```
+
+###Classification Tree Model
+Here a classification tree is built to test our accuracy before more complicated models are considered. 
+```{r}
+set.seed(121212)
+modFit1 <- rpart(classe ~ ., data = train, method="class")
+fancyRpartPlot(modFit1)
+```
+
+
+###Classification Tree Results
+The classification tres received an Out of Sample Error of 27.34% which is actually not terrible considereing accepteble predictions can be around 80%. However, when it was run on the final test set and the highest probability choices where chosen for the quiz I only recieved a 55%. The nice thing about the results is I am given a second less likely option which acould be chosen once you know the incorrect results. Still a random forests should yield much more accurate results on the first go. 
+```{r}
+set.seed(321123)
+
+pred.modFit1 <- predict(modFit1, train, type = "class")
+confusionMatrix(pred.modFit1, train$classe)
+
+pred.modFit1 <- predict(modFit1, train.test, type = "class")
+confusionMatrix(pred.modFit1, train.test$classe)
+
+testing.pred <- predict(modFit1, testing)
+testing.pred
+
+```
+
+
+###Random Forest 
+This creates the random forest model which works very well for prediction in data sets with many uncorrelated variables. It works by createing many classification trees that use random subsets of variables then aggregrates the results. I choose to create 1000 random classification trees which may be overfitting. Also I found that using the randomForest function to be much faster than the train function. The run time for randomForest was about 3 min while for the train() it could be 15 min.
+```{r}
+set.seed(98789)
+
+startTime <- Sys.time();
+modFit3 <- randomForest(classe ~ ., data = train, ntree = 1000, importance=TRUE)
+endTime <- Sys.time()
+endTime - startTime
+```
+
+
+###Variable Importance Plot
+For each variable in the matrix this plot tells you hoq important the variable is in classifying your data. Top is the most important bottom is least important. Mor information at https://dinsdalelab.sdsu.edu/metag.stats/code/randomforest.html
+```{r}
+varImpPlot(modFit3)
+```
+
+
+###Random Forest Model Result
+This is the RF results on the train dataset. An important mark is the Out of Bag error rate of 0.69%. 
+```{r}
+modFit3
+```
+
+
+###Random Forest Cross Validation Set Prediction
+Below are the results for the predictions on the train.test dataset (cross validation set). 
+
+The In Sample Error Rate is 0%. This means the model is probably overfitted.
+
+The Out of Sample Error Rate is 1 - Accuracy from out of sample test = 1 - 0.994 = 1.6%
+```{r}
+
+train.pred <- predict(modFit3, train)
+confusionMatrix(train.pred, train$classe)
+
+train.test.pred <- predict(modFit3, train.test)
+confusionMatrix(train.test.pred, train.test$classe)
+```
+
+###Final Test Set Prediction
+These final results where submitted and revieved 100% on the test set quiz. So even though the model is probably overfitted it predicted the correct results.
+```{r}
+testing.pred <- predict(modFit3, testing)
+testing.pred
+```
+
+###Conclusion
+The Random Forest Model is an incredibly powerful model and worked well under these conditions. In predicion modeling where there are a high amount of variables that can be weighed for impacts on accuracy(answers need to be supplied) than random forests should be top on the choices for modeling techniques
